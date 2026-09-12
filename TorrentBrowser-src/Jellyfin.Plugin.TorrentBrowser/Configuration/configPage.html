@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Torrent Browser</title>
+</head>
+<body>
+<div id="TorrentBrowserConfigPage"
+     data-role="page"
+     class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-select,emby-checkbox">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="TorrentBrowserConfigForm">
+
+                <h2>Indexer</h2>
+
+                <div class="inputContainer">
+                    <input is="emby-input" type="url" id="TrackerUrl" name="TrackerUrl"
+                           label="Address" required />
+                    <div class="fieldDescription">
+                        The host and indexer id from Prowlarr, like http://localhost:9696/1 —
+                        leave off the /api, the plugin adds it. Find the id by clicking the
+                        indexer name in Prowlarr.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <input is="emby-input" type="password" id="TorznabApiKey" name="TorznabApiKey"
+                           label="API key" />
+                    <div class="fieldDescription">
+                        In Prowlarr, under Settings then General.
+                    </div>
+                </div>
+
+                <button is="emby-button" type="button" id="TestTracker" class="raised button-cancel block">
+                    <span>Test indexer connection</span>
+                </button>
+                <div class="fieldDescription">
+                    Tests run against saved settings, so save your changes first.
+                </div>
+                <p id="TrackerTestResult" class="fieldDescription"></p>
+
+                <br />
+                <h2>Torrent client</h2>
+
+                <div class="selectContainer">
+                    <select is="emby-select" id="DownloadClient" name="DownloadClient" label="Client">
+                        <option value="QBittorrent">qBittorrent</option>
+                        <option value="Transmission">Transmission</option>
+                        <option value="Deluge">Deluge</option>
+                    </select>
+                    <div class="fieldDescription">
+                        Only qBittorrent is implemented so far.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <input is="emby-input" type="url" id="DownloadClientUrl" name="DownloadClientUrl"
+                           label="Address" placeholder="http://127.0.0.1:8080" />
+                </div>
+
+                <div class="inputContainer">
+                    <input is="emby-input" type="text" id="DownloadClientUsername"
+                           name="DownloadClientUsername" label="Username" />
+                </div>
+
+                <div class="inputContainer">
+                    <input is="emby-input" type="password" id="DownloadClientPassword"
+                           name="DownloadClientPassword" label="Password" />
+                </div>
+
+                <div class="inputContainer">
+                    <input is="emby-input" type="text" id="MovieCategory" name="MovieCategory"
+                           label="Category for movies" />
+                </div>
+
+                <div class="inputContainer">
+                    <input is="emby-input" type="text" id="SeriesCategory" name="SeriesCategory"
+                           label="Category for series" />
+                </div>
+
+                <div class="inputContainer">
+                    <input is="emby-input" type="text" id="SavePath" name="SavePath"
+                           label="Save path" />
+                    <div class="fieldDescription">
+                        Leave empty to use the client's own default. This path is resolved by the
+                        torrent client, so it must make sense on that machine, not on Jellyfin's.
+                        Point it inside a folder Jellyfin scans or finished downloads will not
+                        appear in your library.
+                    </div>
+                </div>
+
+                <button is="emby-button" type="button" id="TestDownloadClient" class="raised button-cancel block">
+                    <span>Test client connection</span>
+                </button>
+                <p id="DownloadClientTestResult" class="fieldDescription"></p>
+
+                <br />
+                <h2>Access</h2>
+
+                <label class="checkboxContainer">
+                    <input is="emby-checkbox" type="checkbox" id="RequireAdminToDownload"
+                           name="RequireAdminToDownload" />
+                    <span>Only administrators can send torrents</span>
+                </label>
+                <div class="fieldDescription checkboxFieldDescription">
+                    Turn this off and every signed-in user can add downloads to your client.
+                </div>
+
+                <div class="inputContainer">
+                    <input is="emby-input" type="number" min="1" max="1440"
+                           id="ResultCacheMinutes" name="ResultCacheMinutes"
+                           label="Minutes search results stay sendable" />
+                </div>
+
+                <br />
+                <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                    <span>Save changes</span>
+                </button>
+
+                <div class="fieldDescription" style="margin-top:1.5em;">
+                    Browse page:
+                    <a id="BrowseLink" href="#/configurationpage?name=TorrentBrowserBrowse">open it here</a>.
+                    It is not linked from the sidebar, so bookmark it.
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var pluginId = '20a80c3b-5977-4c19-87b6-bb7898e8e728';
+            var page = document.querySelector('#TorrentBrowserConfigPage');
+
+            // Jellyfin serialises enums as names, not ordinals, so the option
+            // values must be the C# member names. Older servers sent numbers,
+            // so accept both when loading.
+            var CLIENTS = ['QBittorrent', 'Transmission', 'Deluge'];
+
+            function enumName(raw, names) {
+                if (typeof raw === 'number') { return names[raw] || names[0]; }
+                return names.indexOf(raw) === -1 ? names[0] : raw;
+            }
+
+            function load(config) {
+                page.querySelector('#TrackerUrl').value = config.TrackerUrl || '';
+                page.querySelector('#TorznabApiKey').value = config.TorznabApiKey || '';
+                page.querySelector('#DownloadClient').value = enumName(config.DownloadClient, CLIENTS);
+                page.querySelector('#DownloadClientUrl').value = config.DownloadClientUrl || '';
+                page.querySelector('#DownloadClientUsername').value = config.DownloadClientUsername || '';
+                page.querySelector('#DownloadClientPassword').value = config.DownloadClientPassword || '';
+                page.querySelector('#MovieCategory').value = config.MovieCategory || '';
+                page.querySelector('#SeriesCategory').value = config.SeriesCategory || '';
+                page.querySelector('#SavePath').value = config.SavePath || '';
+                page.querySelector('#RequireAdminToDownload').checked = config.RequireAdminToDownload;
+                page.querySelector('#ResultCacheMinutes').value = config.ResultCacheMinutes;
+            }
+
+            function number(selector, fallback) {
+                var parsed = parseInt(page.querySelector(selector).value, 10);
+                return isNaN(parsed) ? fallback : parsed;
+            }
+
+            function runTest(path, target, button) {
+                var el = page.querySelector(target);
+                el.textContent = 'Testing…';
+                el.style.color = '';
+                button.disabled = true;
+
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl(path),
+                    dataType: 'json'
+                }).then(function (result) {
+                    el.textContent = result.Message;
+                    el.style.color = result.Ok ? '' : '#cc3333';
+                }).catch(function () {
+                    el.textContent = 'The server did not answer. Check the Jellyfin log.';
+                    el.style.color = '#cc3333';
+                }).finally(function () {
+                    button.disabled = false;
+                });
+            }
+
+            page.addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    load(config);
+                    Dashboard.hideLoadingMsg();
+                });
+            });
+
+            page.querySelector('#TestTracker').addEventListener('click', function () {
+                runTest('TorrentBrowser/Test/Tracker', '#TrackerTestResult', this);
+            });
+
+            page.querySelector('#TestDownloadClient').addEventListener('click', function () {
+                runTest('TorrentBrowser/Test/DownloadClient', '#DownloadClientTestResult', this);
+            });
+
+            page.querySelector('#TorrentBrowserConfigForm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                Dashboard.showLoadingMsg();
+
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    // Enums go back as names. Sending NaN here is what produced
+                    // the 500 on save: JSON.stringify turns it into null, and
+                    // null will not bind to a non-nullable enum.
+                    config.DownloadClient = page.querySelector('#DownloadClient').value;
+
+                    config.TrackerUrl = page.querySelector('#TrackerUrl').value.trim().replace(/\/+$/, '');
+                    config.TorznabApiKey = page.querySelector('#TorznabApiKey').value.trim();
+                    config.DownloadClientUrl = page.querySelector('#DownloadClientUrl').value.trim().replace(/\/+$/, '');
+                    config.DownloadClientUsername = page.querySelector('#DownloadClientUsername').value;
+                    config.DownloadClientPassword = page.querySelector('#DownloadClientPassword').value;
+                    config.MovieCategory = page.querySelector('#MovieCategory').value.trim();
+                    config.SeriesCategory = page.querySelector('#SeriesCategory').value.trim();
+                    config.SavePath = page.querySelector('#SavePath').value.trim();
+                    config.RequireAdminToDownload = page.querySelector('#RequireAdminToDownload').checked;
+                    config.ResultCacheMinutes = number('#ResultCacheMinutes', 30);
+
+                    ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                    }).catch(function () {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('The server rejected the settings. Check the Jellyfin log.');
+                    });
+                });
+
+                return false;
+            });
+        })();
+    </script>
+</div>
+</body>
+</html>

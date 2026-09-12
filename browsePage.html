@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Browse tracker</title>
+</head>
+<body>
+<div id="TorrentBrowserBrowsePage"
+     data-role="page"
+     class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-select">
+    <div data-role="content">
+        <div class="content-primary">
+
+            <h2>Browse tracker</h2>
+
+            <div class="inputContainer">
+                <input is="emby-input" type="text" id="Query" label="Search"
+                       placeholder="Title, or leave empty for the newest releases" />
+            </div>
+
+            <div class="selectContainer">
+                <select is="emby-select" id="Kind" label="Show">
+                    <option value="">Everything</option>
+                    <option value="movie">Movies</option>
+                    <option value="series">Series</option>
+                </select>
+            </div>
+
+            <button is="emby-button" type="button" id="Go" class="raised button-submit block">
+                <span>Search</span>
+            </button>
+
+            <p id="Status" class="fieldDescription"></p>
+
+            <table class="tblResults" style="width:100%; border-collapse:collapse; margin-top:1.5em;">
+                <thead>
+                    <tr style="text-align:left;">
+                        <th style="padding:.5em;">Release</th>
+                        <th style="padding:.5em; white-space:nowrap;">Size</th>
+                        <th style="padding:.5em; white-space:nowrap;">S / L</th>
+                        <th style="padding:.5em;"></th>
+                    </tr>
+                </thead>
+                <tbody id="Results"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var page = document.querySelector('#TorrentBrowserBrowsePage');
+            var results = page.querySelector('#Results');
+            var status = page.querySelector('#Status');
+
+            function humanSize(bytes) {
+                if (!bytes) { return '—'; }
+                var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+                var i = 0;
+                while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
+                return bytes.toFixed(i < 2 ? 0 : 2) + ' ' + units[i];
+            }
+
+            function showError(response, fallback) {
+                if (response && typeof response.json === 'function') {
+                    response.json().then(function (body) {
+                        status.textContent = body.detail || body.Message || fallback;
+                    }).catch(function () {
+                        status.textContent = fallback;
+                    });
+                } else {
+                    status.textContent = fallback;
+                }
+                status.style.color = '#cc3333';
+            }
+
+            function send(releaseId, button) {
+                var original = button.querySelector('span').textContent;
+                button.disabled = true;
+                button.querySelector('span').textContent = 'Sending…';
+
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('TorrentBrowser/Releases/' + releaseId + '/Download')
+                }).then(function () {
+                    button.querySelector('span').textContent = 'Sent';
+                }).catch(function (response) {
+                    button.disabled = false;
+                    button.querySelector('span').textContent = original;
+
+                    var message = 'The torrent client did not accept it.';
+                    if (response && response.json) {
+                        response.json().then(function (body) {
+                            Dashboard.alert(body.detail || body.Message || message);
+                        }).catch(function () {
+                            Dashboard.alert(message);
+                        });
+                    } else {
+                        Dashboard.alert(message);
+                    }
+                });
+            }
+
+            function render(items) {
+                results.innerHTML = '';
+
+                if (!items.length) {
+                    status.textContent = 'Nothing matched that search. Try fewer words.';
+                    return;
+                }
+
+                status.textContent = items.length + ' releases.';
+
+                items.forEach(function (item) {
+                    var row = document.createElement('tr');
+                    row.style.borderTop = '1px solid rgba(255,255,255,.1)';
+
+                    var title = document.createElement('td');
+                    title.style.padding = '.5em';
+                    if (item.DetailsUrl) {
+                        var link = document.createElement('a');
+                        link.href = item.DetailsUrl;
+                        link.target = '_blank';
+                        link.rel = 'noopener noreferrer';
+                        link.textContent = item.Title;
+                        title.appendChild(link);
+                    } else {
+                        title.textContent = item.Title;
+                    }
+
+                    var size = document.createElement('td');
+                    size.style.padding = '.5em';
+                    size.style.whiteSpace = 'nowrap';
+                    size.textContent = humanSize(item.SizeBytes);
+
+                    var peers = document.createElement('td');
+                    peers.style.padding = '.5em';
+                    peers.style.whiteSpace = 'nowrap';
+                    peers.textContent = item.Seeders + ' / ' + Math.max(item.Leechers, 0);
+
+                    var action = document.createElement('td');
+                    action.style.padding = '.5em';
+                    action.style.textAlign = 'right';
+
+                    var button = document.createElement('button');
+                    button.setAttribute('is', 'emby-button');
+                    button.className = 'raised button-submit';
+                    button.type = 'button';
+                    var label = document.createElement('span');
+                    label.textContent = 'Download';
+                    button.appendChild(label);
+                    button.addEventListener('click', function () { send(item.Id, button); });
+                    action.appendChild(button);
+
+                    row.append(title, size, peers, action);
+                    results.appendChild(row);
+                });
+            }
+
+            function search() {
+                status.textContent = 'Searching…';
+                status.style.color = '';
+                results.innerHTML = '';
+
+                var url = ApiClient.getUrl('TorrentBrowser/Search', {
+                    query: page.querySelector('#Query').value,
+                    kind: page.querySelector('#Kind').value,
+                    page: 1
+                });
+
+                ApiClient.getJSON(url).then(function (data) {
+                    render(data.Items || []);
+                }).catch(function (response) {
+                    // The controller returns the real reason in the problem
+                    // body. Swallowing it and showing a generic line means
+                    // every failure looks identical and sends you to the log.
+                    showError(response, 'The tracker could not be reached. Check the plugin settings.');
+                });
+            }
+
+            page.querySelector('#Go').addEventListener('click', search);
+            page.querySelector('#Query').addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') { search(); }
+            });
+        })();
+    </script>
+</div>
+</body>
+</html>

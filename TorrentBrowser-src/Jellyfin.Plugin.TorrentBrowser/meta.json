@@ -1,0 +1,13 @@
+{
+    "guid": "20a80c3b-5977-4c19-87b6-bb7898e8e728",
+    "name": "Torrent Browser",
+    "description": "Browse a tracker and send releases to your torrent client.",
+    "overview": "Browse a tracker from the dashboard.",
+    "owner": "eszem",
+    "category": "General",
+    "version": "1.0.0.0",
+    "targetAbi": "10.11.0.0",
+    "framework": "net9.0",
+    "status": "Active",
+    "autoUpdate": false
+}
