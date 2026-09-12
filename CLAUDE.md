@@ -36,6 +36,15 @@ with NO /api — the plugin appends it.
 - Torznab has no sort parameter — the indexer answers newest first, so the
   browse page buffers several indexer pages, then sorts, filters and pages
   through that buffer client-side. Opening it pulls 3 pages in the background.
+- Android TV, Fire TV and Roku are native apps with no web dashboard: no
+  server plugin can put UI in them. LG webOS and Samsung Tizen run
+  jellyfin-web in a webview, so plugin pages do work there. The browse page
+  is therefore built to be driven by a remote in any browser-based client:
+  arrow keys walk the card grid, OK sends, and /TorrentBrowser redirects to
+  it so the URL can be typed on an on-screen keyboard.
+- Never disable a button the user is focused on. Disabling blurs it, and on
+  a remote that drops focus to the document — you start again from the top
+  of the page after every send. Guard on state instead.
 - Posters come from Jellyfin's own Items/RemoteSearch (admin-only, one
   provider call per release) — lazy, queued three at a time, cached per
   session, and it stops asking after a 403.

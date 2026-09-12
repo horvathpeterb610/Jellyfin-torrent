@@ -40,6 +40,22 @@ public class TorrentBrowserController : ControllerBase
         _logger = logger;
     }
 
+    /// <summary>
+    /// Short link to the browse page: GET /TorrentBrowser redirects to it.
+    /// </summary>
+    /// <remarks>
+    /// Anonymous because the browser arrives here with no token and this only
+    /// ever points at a static page, which asks for a login itself. It exists
+    /// because /web/index.html#/configurationpage?name=TorrentBrowserBrowse is
+    /// not a URL anyone is going to type on a TV's on-screen keyboard.
+    /// </remarks>
+    [HttpGet]
+    [AllowAnonymous]
+    [ApiExplorerSettings(IgnoreApi = true)]
+    public ActionResult Browse() =>
+        Redirect(Request.PathBase.ToUriComponent()
+            + "/web/index.html#/configurationpage?name=TorrentBrowserBrowse");
+
     /// <summary>Searches the configured tracker.</summary>
     [HttpGet("Search")]
     [ProducesResponseType(StatusCodes.Status200OK)]

@@ -136,6 +136,10 @@
                 <div class="fieldDescription" style="margin-top:1.5em;">
                     Browse page:
                     <a id="BrowseLink" href="#/configurationpage?name=TorrentBrowserBrowse">open it here</a>.
+                    From a phone or a TV browser, <b id="ShortLink"></b> goes straight to it.
+                    The page can be driven with a remote: arrow keys move between
+                    releases, OK sends the one in focus, and the TV mode button
+                    there enlarges everything for a TV screen.
                 </div>
             </form>
         </div>
@@ -196,6 +200,15 @@
                     button.disabled = false;
                 });
             }
+
+            // Show the real short link rather than a placeholder host, base
+            // path included.
+            var base = (window.ApiClient && ApiClient.serverAddress)
+                ? (ApiClient.serverAddress() || window.location.origin)
+                : window.location.origin;
+
+            page.querySelector('#ShortLink').textContent =
+                String(base).replace(/\/+$/, '') + '/TorrentBrowser';
 
             page.addEventListener('pageshow', function () {
                 Dashboard.showLoadingMsg();

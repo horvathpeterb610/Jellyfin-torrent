@@ -95,6 +95,49 @@
                 #TorrentBrowserBrowsePage .tbGo:hover { filter: brightness(1.1); }
                 #TorrentBrowserBrowsePage .tbGo:disabled { opacity: .5; cursor: default; }
 
+                #TorrentBrowserBrowsePage .tbGhost {
+                    padding: .62em 1em;
+                    font-size: 1em;
+                    font-family: inherit;
+                    color: inherit;
+                    background: var(--tb-panel-hi);
+                    border: 1px solid var(--tb-line);
+                    border-radius: 6px;
+                    cursor: pointer;
+                }
+
+                #TorrentBrowserBrowsePage .tbGhost[aria-pressed="true"] {
+                    color: #fff;
+                    background: var(--tb-accent);
+                    border-color: var(--tb-accent);
+                }
+
+                /* A remote moves focus, it does not hover. Every focusable
+                   thing has to say loudly where it is from three metres away. */
+                #TorrentBrowserBrowsePage :focus-visible {
+                    outline: 3px solid var(--tb-accent);
+                    outline-offset: 2px;
+                }
+
+                #TorrentBrowserBrowsePage .tbCard:focus-within {
+                    border-color: var(--tb-accent);
+                    box-shadow: 0 0 0 3px rgba(0, 164, 220, .5);
+                    transform: translateY(-2px);
+                }
+
+                #TorrentBrowserBrowsePage .tbCard:focus-within .tbSend {
+                    color: #fff;
+                    background: var(--tb-accent);
+                    border-color: var(--tb-accent);
+                }
+
+                /* TV mode. Everything is sized in em, so one font-size on the
+                   page scales the whole layout for a ten-foot viewing distance. */
+                #TorrentBrowserBrowsePage.tbTv { font-size: 1.35em; }
+                #TorrentBrowserBrowsePage.tbTv .tbGrid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+                #TorrentBrowserBrowsePage.tbTv .tbRelease { display: none; }
+                #TorrentBrowserBrowsePage.tbTv .tbCard:focus-within { box-shadow: 0 0 0 5px rgba(0, 164, 220, .6); }
+
                 #TorrentBrowserBrowsePage .tbStatus {
                     display: flex;
                     flex-wrap: wrap;
@@ -437,6 +480,9 @@
                 </div>
 
                 <button type="button" id="Go" class="tbGo">Search</button>
+
+                <button type="button" id="TvMode" class="tbGhost" aria-pressed="false"
+                        title="Bigger type and stronger focus, for a TV screen">TV mode</button>
             </div>
 
             <p id="Status" class="tbStatus"></p>
@@ -909,10 +955,16 @@
                 if (state.sent[item.Id]) {
                     send.dataset.state = 'sent';
                     send.textContent = 'Sent ✓';
-                    send.disabled = true;
                 }
 
-                send.addEventListener('click', function () { sendRelease(item, send); });
+                send.addEventListener('click', function () {
+                    // Never disabled: a disabled button loses focus, and on a
+                    // remote that means starting again from the top of the page
+                    // after every send. The state guards the second press.
+                    if (send.dataset.state === 'sent' || send.dataset.state === 'sending') { return; }
+
+                    sendRelease(item, send);
+                });
                 actions.appendChild(send);
 
                 if (item.DetailsUrl) {
@@ -1181,7 +1233,6 @@
             }
 
             function sendRelease(item, button) {
-                button.disabled = true;
                 button.dataset.state = 'sending';
                 button.textContent = 'Sending…';
 
@@ -1194,7 +1245,6 @@
                     button.textContent = 'Sent ✓';
                 }).catch(function (response) {
                     describe(response, 'The torrent client did not accept it.', function (message) {
-                        button.disabled = false;
                         button.dataset.state = 'failed';
                         button.textContent = 'Failed — retry';
                         button.title = message;
@@ -1283,11 +1333,138 @@
             }
 
             function turnPage(delta) {
+                var fromGrid = ancestorCard(document.activeElement) !== null;
+                var fromPager = pager.contains(document.activeElement);
+
                 goToView(state.view + delta).then(function () {
                     // Page two starting half way down page one is disorienting.
                     if (results.scrollIntoView) { results.scrollIntoView({ block: 'start' }); }
+
+                    var first = results.querySelector('.tbCard .tbSend');
+                    if (!first) { return; }
+
+                    // Every card was replaced, so a remote's focus has to be put
+                    // somewhere deliberate. Paging from the pager stays on the
+                    // pager, so OK can turn again — unless that button just went
+                    // dead on the last page, which blurs it to the document.
+                    if (fromGrid) { first.focus(); }
+                    else if (fromPager && document.activeElement === document.body) { first.focus(); }
                 });
             }
+
+            // ---- remote control ------------------------------------------------
+            //
+            // A TV browser sends arrow keys, not tab stops, and there is no
+            // pointer. Cards are navigated as a grid, and focus lands on each
+            // card's Send button so OK does the obvious thing; the card itself
+            // lights up through :focus-within.
+
+            function ancestorCard(node) {
+                while (node && node !== results) {
+                    if (node.classList && node.classList.contains('tbCard')) { return node; }
+                    node = node.parentNode;
+                }
+
+                return null;
+            }
+
+            function columnCount() {
+                var template = window.getComputedStyle(results).gridTemplateColumns || '';
+                var columns = template.split(' ').filter(function (part) { return part.length; }).length;
+
+                return Math.max(columns, 1);
+            }
+
+            function focusCard(card) {
+                var target = card.querySelector('.tbSend');
+                if (!target) { return; }
+
+                target.focus();
+
+                if (card.scrollIntoView) {
+                    try { card.scrollIntoView({ block: 'nearest' }); }
+                    catch (e) { card.scrollIntoView(); }
+                }
+            }
+
+            results.addEventListener('keydown', function (e) {
+                var horizontal = e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+                var vertical = e.key === 'ArrowUp' || e.key === 'ArrowDown';
+
+                if (!horizontal && !vertical) { return; }
+
+                var cards = Array.prototype.slice.call(results.querySelectorAll('.tbCard'));
+                var index = cards.indexOf(ancestorCard(document.activeElement));
+
+                if (index === -1) { return; }
+
+                var columns = columnCount();
+                var next = index;
+
+                if (e.key === 'ArrowRight') { next = index + 1; }
+                if (e.key === 'ArrowLeft') { next = index - 1; }
+                if (e.key === 'ArrowDown') { next = index + columns; }
+                if (e.key === 'ArrowUp') { next = index - columns; }
+
+                if (next >= 0 && next < cards.length) {
+                    e.preventDefault();
+                    focusCard(cards[next]);
+                    return;
+                }
+
+                // Off the top of the grid is the search box; off the bottom is
+                // the pager. Anything else stays put rather than scrolling away.
+                if (e.key === 'ArrowUp' && next < 0) {
+                    e.preventDefault();
+                    page.querySelector('#Query').focus();
+                } else if (e.key === 'ArrowDown' && pager.style.display !== 'none') {
+                    var forward = page.querySelector('#Next');
+                    var back = page.querySelector('#Prev');
+                    var target = forward.disabled ? (back.disabled ? null : back) : forward;
+
+                    if (target) { e.preventDefault(); target.focus(); }
+                }
+            });
+
+            page.querySelector('.tbBar').addEventListener('keydown', function (e) {
+                if (e.key !== 'ArrowDown') { return; }
+
+                // A select uses up and down to change its value. Leave it alone.
+                var active = document.activeElement || {};
+                if ((active.tagName || '').toLowerCase() === 'select') { return; }
+
+                var first = results.querySelector('.tbCard .tbSend');
+                if (first) { e.preventDefault(); first.focus(); }
+            });
+
+            pager.addEventListener('keydown', function (e) {
+                if (e.key !== 'ArrowUp') { return; }
+
+                var cards = results.querySelectorAll('.tbCard');
+                if (!cards.length) { return; }
+
+                e.preventDefault();
+                focusCard(cards[cards.length - 1]);
+            });
+
+            // ---- TV mode -------------------------------------------------------
+
+            function applyTvMode(on) {
+                if (on) { page.classList.add('tbTv'); } else { page.classList.remove('tbTv'); }
+
+                page.querySelector('#TvMode').setAttribute('aria-pressed', on ? 'true' : 'false');
+
+                try { window.localStorage.setItem('tbTvMode', on ? '1' : '0'); }
+                catch (err) { /* private mode: the setting just will not stick */ }
+            }
+
+            page.querySelector('#TvMode').addEventListener('click', function () {
+                applyTvMode(this.getAttribute('aria-pressed') !== 'true');
+            });
+
+            try {
+                if (window.localStorage.getItem('tbTvMode') === '1') { applyTvMode(true); }
+            } catch (err) { /* nothing stored, nothing to restore */ }
 
             page.querySelector('#Go').addEventListener('click', function () { newSearch(); });
 
