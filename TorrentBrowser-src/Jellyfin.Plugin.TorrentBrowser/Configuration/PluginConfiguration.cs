@@ -70,4 +70,12 @@ public class PluginConfiguration : BasePluginConfiguration
 
     /// <summary>Restrict sending torrents to administrators only.</summary>
     public bool RequireAdminToDownload { get; set; } = true;
+
+    // ---- Web interface ---------------------------------------------------
+
+    /// <summary>
+    /// Adds a Torrents button to the web client header. Applied at server
+    /// start, because it works by editing jellyfin-web's index.html.
+    /// </summary>
+    public bool AddHeaderButton { get; set; } = true;
 }

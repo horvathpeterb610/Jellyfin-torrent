@@ -1,6 +1,7 @@
 using System.Net;
 using Jellyfin.Plugin.TorrentBrowser.Download;
 using Jellyfin.Plugin.TorrentBrowser.Trackers;
+using Jellyfin.Plugin.TorrentBrowser.Web;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,6 +24,11 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 
         serviceCollection.AddSingleton<QBittorrentClient>();
         serviceCollection.AddSingleton<DownloadClientResolver>();
+
+        // Runs once at startup to put the Torrents button in the web client
+        // header. IServerEntryPoint is obsolete in 10.11; this is its
+        // replacement.
+        serviceCollection.AddHostedService<WebInterfaceInjector>();
 
         // Plain client: Torznab, and fetching torrent files from public URLs.
         serviceCollection

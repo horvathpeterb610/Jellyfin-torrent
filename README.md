@@ -40,6 +40,8 @@ Download/
   QBittorrentClient.cs            qBittorrent Web API v2
 Api/
   TorrentBrowserController.cs     /TorrentBrowser/* routes
+Web/
+  WebInterfaceInjector.cs         Header button, written into jellyfin-web
 Routes
 Method	Route	Who
 GET	/TorrentBrowser/Search?query=&kind=movie|series&page=1	any signed-in user
@@ -79,6 +81,10 @@ Fetch the .torrent yourself, don't hand qBittorrent the link. On a private track
 Enums cross the API as names, not numbers. getPluginConfiguration returns Mode: "Torznab", not 0. Bind a <select> whose option values are "0" and "1" and it renders blank, then parseInt("") sends NaN, which serialises to null, which will not bind to a non-nullable enum — a 500 on save with nothing useful in the browser console. The config page uses the C# member names as option values and accepts either form when loading.
 
 Policies.DefaultAuthorization is gone in 10.11. A bare [Authorize] uses the framework default policy, which requires an authenticated user — the same thing. Policies.RequiresElevation still exists, so keep the MediaBrowser.Common.Api using. On older servers the class lives in Jellyfin.Api.Constants instead.
+
+Nothing server-side can add to the client's navigation. IHasWebPages only reaches Dashboard, Plugins; the sidebar, the header and the home rows are built inside jellyfin-web, which no plugin API touches. The one way in is a script beside index.html plus a tag referencing it, which is what WebInterfaceInjector writes at startup. It runs on every start because a Jellyfin upgrade replaces jellyfin-web wholesale and takes both with it. Turn off "Show a Torrents button in the header" and the next start removes the tag and deletes the script; a read-only web root only logs a warning. To undo it by hand, delete torrentbrowser-nav.js and its script tag from index.html.
+
+The injected button clones an existing header button rather than building one. Class names in jellyfin-web change between releases, so cloning inherits whatever the running version uses, and the clone's own identifying classes are stripped so the client cannot bind the search or cast handler to it.
 
 The test buttons read saved settings. They call the server, which reads the configuration file, not the form. Save before testing or you are testing the previous values.
 

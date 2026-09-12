@@ -21,6 +21,9 @@ with NO /api — the plugin appends it.
   connection tests pass with a wrong key. Test with a real search.
 - Use t=search, not t=movie. Many indexers don't implement the typed modes
   and Prowlarr errors rather than falling back.
+- No plugin API reaches the web client's sidebar, header or home rows.
+  Web/WebInterfaceInjector.cs writes a script into jellyfin-web and adds a
+  tag to index.html at startup; a server upgrade wipes both, hence every start.
 - Embedded resource names come from folder paths. Keep Api/, Configuration/,
   Download/, Trackers/ — flattening breaks the build.
 
