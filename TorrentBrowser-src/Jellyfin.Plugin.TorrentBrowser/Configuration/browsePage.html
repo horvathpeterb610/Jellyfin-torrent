@@ -400,7 +400,7 @@
                 <div class="tbField tbGrow">
                     <label for="Query">Search</label>
                     <input type="search" id="Query" class="tbInput"
-                           placeholder="Title, or leave empty for the newest releases" />
+                           placeholder="Title, or leave empty for the most seeded" />
                 </div>
 
                 <div class="tbField">
@@ -460,10 +460,26 @@
             var pageLabel = page.querySelector('#PageLabel');
 
             // The server asks the indexer for 50 per page, so a short page is
-            // the last one.
+            // the last one. The grid shows 48, which is a whole number of rows
+            // at every column count the layout produces.
             var PAGE_SIZE = 50;
+            var VIEW_SIZE = 48;
 
-            var state = { page: 1, items: [], loading: false };
+            // How many indexer pages the opening view pulls before it claims to
+            // show the most seeded releases.
+            var DEPTH = 3;
+
+            var state = {
+                query: '',          // criteria the buffer belongs to
+                kind: '',
+                buffer: [],         // every release fetched for those criteria
+                sent: {},           // release ids already accepted by the client
+                serverPage: 0,      // highest indexer page fetched
+                exhausted: false,   // the indexer ran out
+                view: 1,            // which slice of the sorted buffer is shown
+                loading: false,
+                token: 0            // bumped per search, to drop stale answers
+            };
 
             // ---- release name parsing ---------------------------------------
             //
@@ -887,6 +903,15 @@
 
                 var send = element('button', 'tbSend', 'Send');
                 send.type = 'button';
+
+                // Cards are rebuilt on every sort, filter and page change, so
+                // the sent mark has to live in state, not on the button.
+                if (state.sent[item.Id]) {
+                    send.dataset.state = 'sent';
+                    send.textContent = 'Sent ✓';
+                    send.disabled = true;
+                }
+
                 send.addEventListener('click', function () { sendRelease(item, send); });
                 actions.appendChild(send);
 
@@ -910,12 +935,20 @@
                 return card;
             }
 
-            function visibleItems() {
+            // ---- the buffer --------------------------------------------------
+            //
+            // Torznab has no "sort by seeders": the indexer answers newest
+            // first, so the most seeded release can be sitting on any page.
+            // Everything fetched for the current criteria is therefore kept in
+            // one buffer, sorted here, and paged through here. The indexer's own
+            // paging is only used to widen that buffer.
+
+            function filtered() {
                 var language = page.querySelector('#Language').value;
                 var quality = page.querySelector('#Quality').value;
                 var sort = page.querySelector('#Sort').value;
 
-                var filtered = state.items.filter(function (item) {
+                var items = state.buffer.filter(function (item) {
                     if (language) {
                         var codes = detectLanguages(item.Title).map(function (l) { return l.code; });
                         if (codes.indexOf(language) === -1) { return false; }
@@ -926,7 +959,7 @@
                     return true;
                 });
 
-                return filtered.sort(function (a, b) {
+                return items.sort(function (a, b) {
                     if (sort === 'size') { return (b.SizeBytes || 0) - (a.SizeBytes || 0); }
                     if (sort === 'title') { return String(a.Title).localeCompare(String(b.Title)); }
                     if (sort === 'date') {
@@ -936,11 +969,107 @@
                 });
             }
 
+            function absorb(items) {
+                var known = {};
+
+                state.buffer.forEach(function (item) { known[item.Id] = true; });
+
+                // An indexer that shifts between requests can repeat a release
+                // across pages. Two cards for one torrent is a bug you notice.
+                items.forEach(function (item) {
+                    if (known[item.Id]) { return; }
+                    known[item.Id] = true;
+                    state.buffer.push(item);
+                });
+            }
+
+            function fetchServerPage(number) {
+                return ApiClient.getJSON(ApiClient.getUrl('TorrentBrowser/Search', {
+                    query: state.query,
+                    kind: state.kind,
+                    page: number
+                })).then(function (data) { return data.Items || []; });
+            }
+
+            function loadNextPage(token) {
+                if (state.exhausted || state.loading) { return Promise.resolve(false); }
+
+                state.loading = true;
+                setBusy(true);
+
+                return fetchServerPage(state.serverPage + 1).then(function (items) {
+                    if (token !== state.token) { return false; }
+
+                    state.serverPage++;
+                    if (items.length < PAGE_SIZE) { state.exhausted = true; }
+                    absorb(items);
+
+                    return true;
+                }).catch(function (response) {
+                    if (token !== state.token) { return false; }
+
+                    // Stop after a failure rather than asking the same broken
+                    // indexer once per page turn.
+                    state.exhausted = true;
+
+                    describe(response, 'The tracker could not be reached. Check the plugin settings.',
+                        function (message) { setStatus(message, true); });
+
+                    return false;
+                }).finally(function () {
+                    if (token === state.token) {
+                        state.loading = false;
+                        setBusy(false);
+                    }
+                });
+            }
+
+            // Only ever disables. updatePager decides what the pager should
+            // look like once the load is done; latching a disabled button here
+            // would leave it dead for the rest of the session.
+            function setBusy(busy) {
+                page.querySelector('#Go').disabled = busy;
+
+                if (busy) {
+                    page.querySelector('#Prev').disabled = true;
+                    page.querySelector('#Next').disabled = true;
+                }
+            }
+
+            // Walks to a view, pulling more indexer pages until it can be filled
+            // or the tracker runs out.
+            function goToView(target) {
+                state.view = Math.max(target, 1);
+
+                var token = state.token;
+
+                function fill() {
+                    if (token !== state.token) { return Promise.resolve(); }
+                    if (state.exhausted) { return Promise.resolve(); }
+                    if (filtered().length >= state.view * VIEW_SIZE) { return Promise.resolve(); }
+
+                    return loadNextPage(token).then(function (added) {
+                        return added ? fill() : undefined;
+                    });
+                }
+
+                return fill().then(function () {
+                    if (token !== state.token) { return; }
+
+                    // A filter can shrink the list under the requested view.
+                    var pages = Math.max(Math.ceil(filtered().length / VIEW_SIZE), 1);
+                    if (state.view > pages) { state.view = pages; }
+
+                    refreshFilterOptions();
+                    render();
+                });
+            }
+
             function refreshFilterOptions() {
                 var languages = {};
                 var qualities = {};
 
-                state.items.forEach(function (item) {
+                state.buffer.forEach(function (item) {
                     detectLanguages(item.Title).forEach(function (lang) {
                         languages[lang.code] = (languages[lang.code] || 0) + 1;
                     });
@@ -976,25 +1105,64 @@
                 if (select.selectedIndex === -1) { select.value = ''; }
             }
 
+            // ---- rendering ---------------------------------------------------
+
             function render() {
+                var items = filtered();
+                var start = (state.view - 1) * VIEW_SIZE;
+                var slice = items.slice(start, start + VIEW_SIZE);
+
                 results.innerHTML = '';
 
-                var items = visibleItems();
-
-                if (!items.length) {
+                if (!slice.length) {
                     var empty = element('div', 'tbEmpty');
                     empty.style.gridColumn = '1 / -1';
-                    empty.appendChild(icon(state.items.length ? 'funnel' : 'search', '3em'));
-                    empty.appendChild(element('p', '', state.items.length
-                        ? 'No release on this page matches those filters.'
+                    empty.appendChild(icon(state.buffer.length ? 'funnel' : 'search', '3em'));
+                    empty.appendChild(element('p', '', state.buffer.length
+                        ? 'Nothing on this page matches those filters.'
                         : 'Nothing matched that search. Try fewer words.'));
                     results.appendChild(empty);
+                } else {
+                    var fragment = document.createDocumentFragment();
+                    slice.forEach(function (item) { fragment.appendChild(buildCard(item)); });
+                    results.appendChild(fragment);
+                }
+
+                updateStatus(items.length, start, slice.length);
+                updatePager(items.length);
+            }
+
+            function updateStatus(total, start, count) {
+                if (!total) {
+                    // The empty state carries the message. Leave a real error in
+                    // place, but do not leave "Searching…" sitting there.
+                    if (status.className.indexOf('tbError') === -1) { setStatus(''); }
                     return;
                 }
 
-                var fragment = document.createDocumentFragment();
-                items.forEach(function (item) { fragment.appendChild(buildCard(item)); });
-                results.appendChild(fragment);
+                // "+" because the indexer has more pages we have not pulled.
+                var more = state.exhausted ? '' : '+';
+                var text = (start + 1) + '–' + (start + count) + ' of ' + total + more;
+
+                if (total !== state.buffer.length) {
+                    text += ' (filtered from ' + state.buffer.length + more + ')';
+                }
+
+                if (page.querySelector('#Sort').value === 'seeders') {
+                    text += ' · most seeded first';
+                }
+
+                setStatus(text);
+            }
+
+            function updatePager(total) {
+                var pages = Math.max(Math.ceil(total / VIEW_SIZE), 1);
+                var more = !state.exhausted;
+
+                pager.style.display = (pages > 1 || more) ? 'flex' : 'none';
+                pageLabel.textContent = 'Page ' + state.view + ' of ' + pages + (more ? '+' : '');
+                page.querySelector('#Prev').disabled = state.loading || state.view <= 1;
+                page.querySelector('#Next').disabled = state.loading || (state.view >= pages && !more);
             }
 
             function setStatus(text, isError) {
@@ -1021,6 +1189,7 @@
                     type: 'POST',
                     url: ApiClient.getUrl('TorrentBrowser/Releases/' + item.Id + '/Download')
                 }).then(function () {
+                    state.sent[item.Id] = true;
                     button.dataset.state = 'sent';
                     button.textContent = 'Sent ✓';
                 }).catch(function (response) {
@@ -1042,79 +1211,107 @@
                 }
             }
 
-            function search(pageNumber) {
-                if (state.loading) { return; }
+            // ---- searching -----------------------------------------------------
 
-                state.loading = true;
-                state.page = Math.max(pageNumber || 1, 1);
+            function newSearch() {
+                state.token++;
 
-                page.querySelector('#Go').disabled = true;
+                var token = state.token;
+
+                state.query = page.querySelector('#Query').value.trim();
+                state.kind = page.querySelector('#Kind').value;
+                state.buffer = [];
+                state.serverPage = 0;
+                state.exhausted = false;
+                state.loading = false;
+                state.view = 1;
+
                 setStatus('Searching…');
                 showSkeletons();
                 pager.style.display = 'none';
 
-                var url = ApiClient.getUrl('TorrentBrowser/Search', {
-                    query: page.querySelector('#Query').value,
-                    kind: page.querySelector('#Kind').value,
-                    page: state.page
-                });
+                return loadNextPage(token).then(function () {
+                    if (token !== state.token) { return; }
 
-                ApiClient.getJSON(url).then(function (data) {
-                    state.items = data.Items || [];
                     refreshFilterOptions();
                     render();
 
-                    var shown = visibleItems().length;
-                    setStatus(shown === state.items.length
-                        ? state.items.length + ' releases'
-                        : shown + ' of ' + state.items.length + ' releases shown');
-
-                    pager.style.display = (state.page > 1 || state.items.length >= PAGE_SIZE) ? 'flex' : 'none';
-                    pageLabel.textContent = 'Page ' + state.page;
-                    page.querySelector('#Prev').disabled = state.page <= 1;
-                    page.querySelector('#Next').disabled = state.items.length < PAGE_SIZE;
-                }).catch(function (response) {
-                    // The controller puts the real reason in the problem body.
-                    // Swallowing it makes every failure look the same and sends
-                    // you to the server log for no reason.
-                    results.innerHTML = '';
-                    state.items = [];
-                    describe(response, 'The tracker could not be reached. Check the plugin settings.',
-                        function (message) { setStatus(message, true); });
-                }).finally(function () {
-                    state.loading = false;
-                    page.querySelector('#Go').disabled = false;
+                    // Browsing the catalogue rather than searching it: the first
+                    // fifty are merely the newest fifty, so widen the pool in the
+                    // background before calling anything "most seeded".
+                    if (!state.query) { return deepen(token, DEPTH - 1); }
                 });
             }
 
-            function rerender() {
-                if (!state.items.length) { return; }
+            function deepen(token, remaining) {
+                if (!remaining || token !== state.token || state.exhausted) { return; }
 
-                render();
+                var before = visibleIds();
 
-                var shown = visibleItems().length;
-                setStatus(shown === state.items.length
-                    ? state.items.length + ' releases'
-                    : shown + ' of ' + state.items.length + ' releases shown');
+                return loadNextPage(token).then(function (added) {
+                    if (token !== state.token) { return; }
+
+                    // A page that did not arrive still changes the footer: the
+                    // total is final now, so the "+" and Next have to go.
+                    if (!added) {
+                        updatePager(filtered().length);
+                        return;
+                    }
+
+                    refreshFilterOptions();
+
+                    // Re-render only when the new page actually changes what is
+                    // on screen, so cards do not flicker under the pointer.
+                    if (visibleIds() === before) {
+                        var total = filtered().length;
+                        var start = (state.view - 1) * VIEW_SIZE;
+                        updateStatus(total, start, Math.min(VIEW_SIZE, total - start));
+                        updatePager(total);
+                    } else {
+                        render();
+                    }
+
+                    return deepen(token, remaining - 1);
+                });
             }
 
-            page.querySelector('#Go').addEventListener('click', function () { search(1); });
+            function visibleIds() {
+                return filtered()
+                    .slice((state.view - 1) * VIEW_SIZE, state.view * VIEW_SIZE)
+                    .map(function (item) { return item.Id; })
+                    .join(',');
+            }
+
+            function turnPage(delta) {
+                goToView(state.view + delta).then(function () {
+                    // Page two starting half way down page one is disorienting.
+                    if (results.scrollIntoView) { results.scrollIntoView({ block: 'start' }); }
+                });
+            }
+
+            page.querySelector('#Go').addEventListener('click', function () { newSearch(); });
 
             page.querySelector('#Query').addEventListener('keydown', function (e) {
-                if (e.key === 'Enter') { search(1); }
+                if (e.key === 'Enter') { newSearch(); }
             });
 
-            page.querySelector('#Kind').addEventListener('change', function () { search(1); });
-            page.querySelector('#Language').addEventListener('change', rerender);
-            page.querySelector('#Quality').addEventListener('change', rerender);
-            page.querySelector('#Sort').addEventListener('change', rerender);
+            page.querySelector('#Kind').addEventListener('change', function () { newSearch(); });
 
-            page.querySelector('#Prev').addEventListener('click', function () { search(state.page - 1); });
-            page.querySelector('#Next').addEventListener('click', function () { search(state.page + 1); });
+            // Filtering and sorting work on what is already buffered, so they
+            // never go back to the indexer.
+            ['#Language', '#Quality', '#Sort'].forEach(function (selector) {
+                page.querySelector(selector).addEventListener('change', function () {
+                    state.view = 1;
+                    render();
+                });
+            });
 
-            // Land on the newest releases instead of an empty page.
+            page.querySelector('#Prev').addEventListener('click', function () { turnPage(-1); });
+            page.querySelector('#Next').addEventListener('click', function () { turnPage(1); });
+
+            // Open on the most seeded releases rather than an empty page.
             page.addEventListener('pageshow', function () {
-                if (!state.items.length) { search(1); }
+                if (!state.buffer.length) { newSearch(); }
             });
         })();
     </script>

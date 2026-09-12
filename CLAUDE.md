@@ -33,6 +33,9 @@ with NO /api — the plugin appends it.
 - Emoji flags do not render on Windows; the browse page draws them in CSS.
   Same for icons: material-icons ligatures show as the literal word if the
   font misses, so the browse page uses inline SVG.
+- Torznab has no sort parameter — the indexer answers newest first, so the
+  browse page buffers several indexer pages, then sorts, filters and pages
+  through that buffer client-side. Opening it pulls 3 pages in the background.
 - Posters come from Jellyfin's own Items/RemoteSearch (admin-only, one
   provider call per release) — lazy, queued three at a time, cached per
   session, and it stops asking after a 403.
