@@ -24,6 +24,9 @@ with NO /api — the plugin appends it.
 - No plugin API reaches the web client's sidebar, header or home rows.
   Web/WebInterfaceInjector.cs writes a script into jellyfin-web and adds a
   tag to index.html at startup; a server upgrade wipes both, hence every start.
+- jellyfin-web sits under C:\Program Files, where the Jellyfin account has no
+  write access, so WebInterfaceInjector fails with UnauthorizedAccessException
+  until that folder is granted Modify for that account.
 - Embedded resource names come from folder paths. Keep Api/, Configuration/,
   Download/, Trackers/ — flattening breaks the build.
 

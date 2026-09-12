@@ -40,11 +40,21 @@ public sealed class WebInterfaceInjector : IHostedService
         {
             Apply();
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            // The common case, not a bug: jellyfin-web lives under Program Files
+            // on Windows, and the account the server runs as usually has read
+            // and execute there but not write. Say what to do about it.
+            _logger.LogWarning(
+                "No write access to the web client at {Path}, so the Torrents button is missing. "
+                + "Grant the account Jellyfin runs as Modify rights on that folder, or clear "
+                + "\"Show a Torrents button in the header\" to stop trying. {Message}",
+                _appPaths.WebPath,
+                ex.Message);
+        }
         catch (Exception ex)
         {
-            // Never stop the server booting over a cosmetic button. A web root
-            // that cannot be written to is a normal setup: containers mount it
-            // read-only, and on Windows it lives under Program Files.
+            // Never stop the server booting over a cosmetic button.
             _logger.LogWarning(ex, "Could not change the web interface. The Torrents button will be missing");
         }
 
