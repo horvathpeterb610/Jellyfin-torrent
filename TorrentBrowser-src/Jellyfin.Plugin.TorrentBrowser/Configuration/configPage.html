@@ -114,6 +114,21 @@
                 </div>
 
                 <br />
+                <h2>Web interface</h2>
+
+                <label class="checkboxContainer">
+                    <input is="emby-checkbox" type="checkbox" id="AddHeaderButton"
+                           name="AddHeaderButton" />
+                    <span>Show a Torrents button in the header</span>
+                </label>
+                <div class="fieldDescription checkboxFieldDescription">
+                    Adds a button next to search and cast, for administrators only. Jellyfin has
+                    no plugin hook for its navigation, so this edits jellyfin-web's index.html:
+                    it applies at server start, and a Jellyfin upgrade undoes it until the next
+                    restart. Reload the client with Ctrl+F5 after changing this.
+                </div>
+
+                <br />
                 <button is="emby-button" type="submit" class="raised button-submit block emby-button">
                     <span>Save changes</span>
                 </button>
@@ -121,7 +136,6 @@
                 <div class="fieldDescription" style="margin-top:1.5em;">
                     Browse page:
                     <a id="BrowseLink" href="#/configurationpage?name=TorrentBrowserBrowse">open it here</a>.
-                    It is not linked from the sidebar, so bookmark it.
                 </div>
             </form>
         </div>
@@ -153,6 +167,7 @@
                 page.querySelector('#SeriesCategory').value = config.SeriesCategory || '';
                 page.querySelector('#SavePath').value = config.SavePath || '';
                 page.querySelector('#RequireAdminToDownload').checked = config.RequireAdminToDownload;
+                page.querySelector('#AddHeaderButton').checked = config.AddHeaderButton !== false;
                 page.querySelector('#ResultCacheMinutes').value = config.ResultCacheMinutes;
             }
 
@@ -217,6 +232,7 @@
                     config.SeriesCategory = page.querySelector('#SeriesCategory').value.trim();
                     config.SavePath = page.querySelector('#SavePath').value.trim();
                     config.RequireAdminToDownload = page.querySelector('#RequireAdminToDownload').checked;
+                    config.AddHeaderButton = page.querySelector('#AddHeaderButton').checked;
                     config.ResultCacheMinutes = number('#ResultCacheMinutes', 30);
 
                     ApiClient.updatePluginConfiguration(pluginId, config).then(function (result) {
