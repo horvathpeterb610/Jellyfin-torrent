@@ -30,7 +30,12 @@ with NO /api — the plugin appends it.
 - Embedded resource names come from folder paths. Keep Api/, Configuration/,
   Download/, Trackers/ — flattening breaks the build.
 
+- Emoji flags do not render on Windows; the browse page draws them in CSS.
+  Same for icons: material-icons ligatures show as the literal word if the
+  font misses, so the browse page uses inline SVG.
+- Posters come from Jellyfin's own Items/RemoteSearch (admin-only, one
+  provider call per release) — lazy, queued three at a time, cached per
+  session, and it stops asking after a 403.
+
 ## Not done yet
 - Transmission and Deluge clients (IDownloadClient is two methods)
-- Pagination on the browse page (API already takes `page`)
-- Poster art via the IMDb id Torznab returns

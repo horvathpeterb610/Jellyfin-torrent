@@ -11,38 +11,443 @@
     <div data-role="content">
         <div class="content-primary">
 
-            <h2>Browse tracker</h2>
+            <style>
+                /* Scoped to this page, and deliberately theme-agnostic: every
+                   colour is either currentColor, a neutral rgba that reads on
+                   both the dark and light themes, or one accent. Jellyfin's own
+                   custom properties differ between versions and skins. */
+                #TorrentBrowserBrowsePage {
+                    --tb-line: rgba(127, 127, 127, .28);
+                    --tb-panel: rgba(127, 127, 127, .10);
+                    --tb-panel-hi: rgba(127, 127, 127, .20);
+                    --tb-accent: #00a4dc;
+                    --tb-good: #43a047;
+                    --tb-warn: #e0a030;
+                    --tb-bad: #e5533d;
+                }
 
-            <div class="inputContainer">
-                <input is="emby-input" type="text" id="Query" label="Search"
-                       placeholder="Title, or leave empty for the newest releases" />
+                #TorrentBrowserBrowsePage .tbBar {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: .75em;
+                    align-items: flex-end;
+                    padding: 1em;
+                    margin-bottom: 1em;
+                    border: 1px solid var(--tb-line);
+                    border-radius: 10px;
+                    background: var(--tb-panel);
+                }
+
+                #TorrentBrowserBrowsePage .tbField {
+                    display: flex;
+                    flex-direction: column;
+                    gap: .35em;
+                    min-width: 0;
+                }
+
+                #TorrentBrowserBrowsePage .tbField > label {
+                    font-size: .78em;
+                    letter-spacing: .04em;
+                    text-transform: uppercase;
+                    opacity: .65;
+                }
+
+                #TorrentBrowserBrowsePage .tbGrow { flex: 1 1 18em; }
+
+                #TorrentBrowserBrowsePage .tbInput,
+                #TorrentBrowserBrowsePage .tbSelect {
+                    width: 100%;
+                    box-sizing: border-box;
+                    padding: .6em .7em;
+                    font-size: 1em;
+                    font-family: inherit;
+                    color: inherit;
+                    background: var(--tb-panel-hi);
+                    border: 1px solid var(--tb-line);
+                    border-radius: 6px;
+                }
+
+                #TorrentBrowserBrowsePage .tbInput:focus,
+                #TorrentBrowserBrowsePage .tbSelect:focus {
+                    outline: none;
+                    border-color: var(--tb-accent);
+                }
+
+                /* The native dropdown list paints with the OS palette, so force
+                   a readable pair rather than inheriting a transparent one. */
+                #TorrentBrowserBrowsePage .tbSelect option {
+                    color: #111;
+                    background: #fff;
+                }
+
+                #TorrentBrowserBrowsePage .tbGo {
+                    padding: .62em 1.4em;
+                    font-size: 1em;
+                    font-family: inherit;
+                    font-weight: 600;
+                    color: #fff;
+                    background: var(--tb-accent);
+                    border: 0;
+                    border-radius: 6px;
+                    cursor: pointer;
+                }
+
+                #TorrentBrowserBrowsePage .tbGo:hover { filter: brightness(1.1); }
+                #TorrentBrowserBrowsePage .tbGo:disabled { opacity: .5; cursor: default; }
+
+                #TorrentBrowserBrowsePage .tbStatus {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: .5em 1.25em;
+                    align-items: center;
+                    min-height: 1.6em;
+                    margin: 0 0 1em;
+                    font-size: .9em;
+                    opacity: .8;
+                }
+
+                #TorrentBrowserBrowsePage .tbStatus.tbError {
+                    color: var(--tb-bad);
+                    opacity: 1;
+                }
+
+                #TorrentBrowserBrowsePage .tbGrid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+                    gap: 1.1em;
+                }
+
+                #TorrentBrowserBrowsePage .tbCard {
+                    display: flex;
+                    flex-direction: column;
+                    overflow: hidden;
+                    border: 1px solid var(--tb-line);
+                    border-radius: 10px;
+                    background: var(--tb-panel);
+                    transition: transform .15s ease, border-color .15s ease;
+                }
+
+                #TorrentBrowserBrowsePage .tbCard:hover {
+                    transform: translateY(-2px);
+                    border-color: var(--tb-accent);
+                }
+
+                #TorrentBrowserBrowsePage .tbPoster {
+                    position: relative;
+                    display: block;
+                    aspect-ratio: 2 / 3;
+                    background: var(--tb-panel-hi);
+                    color: inherit;
+                    text-decoration: none;
+                }
+
+                /* Old browsers without aspect-ratio still need a box. */
+                @supports not (aspect-ratio: 2 / 3) {
+                    #TorrentBrowserBrowsePage .tbPoster { height: 270px; }
+                }
+
+                #TorrentBrowserBrowsePage .tbPoster img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    display: block;
+                    opacity: 0;
+                    transition: opacity .25s ease;
+                }
+
+                #TorrentBrowserBrowsePage .tbPoster img.tbLoaded { opacity: 1; }
+
+                #TorrentBrowserBrowsePage .tbNoArt {
+                    position: absolute;
+                    inset: 0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 2.6em;
+                    opacity: .25;
+                }
+
+                #TorrentBrowserBrowsePage .tbChip {
+                    position: absolute;
+                    top: .5em;
+                    padding: .2em .5em;
+                    font-size: .72em;
+                    font-weight: 600;
+                    line-height: 1.4;
+                    color: #fff;
+                    background: rgba(0, 0, 0, .72);
+                    border-radius: 4px;
+                    backdrop-filter: blur(2px);
+                }
+
+                #TorrentBrowserBrowsePage .tbQuality { left: .5em; }
+                #TorrentBrowserBrowsePage .tbPeers { right: .5em; }
+                #TorrentBrowserBrowsePage .tbPeers.tbHealthy { color: #8bdc9a; }
+                #TorrentBrowserBrowsePage .tbPeers.tbDead { color: #ff9c8c; }
+
+                #TorrentBrowserBrowsePage .tbBody {
+                    display: flex;
+                    flex: 1;
+                    flex-direction: column;
+                    gap: .5em;
+                    padding: .7em;
+                }
+
+                #TorrentBrowserBrowsePage .tbTitle {
+                    display: -webkit-box;
+                    -webkit-line-clamp: 2;
+                    -webkit-box-orient: vertical;
+                    overflow: hidden;
+                    margin: 0;
+                    font-size: .95em;
+                    font-weight: 600;
+                    line-height: 1.35;
+                    word-break: break-word;
+                }
+
+                #TorrentBrowserBrowsePage .tbYear {
+                    font-weight: 400;
+                    opacity: .6;
+                }
+
+                /* The raw release name stays available but stops shouting: the
+                   readable title is what you scan, this is what you verify. */
+                #TorrentBrowserBrowsePage .tbRelease {
+                    overflow: hidden;
+                    margin: -.25em 0 0;
+                    font-size: .72em;
+                    line-height: 1.4;
+                    white-space: nowrap;
+                    text-overflow: ellipsis;
+                    opacity: .55;
+                }
+
+                #TorrentBrowserBrowsePage .tbMeta {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: .35em .8em;
+                    margin-top: auto;
+                    font-size: .8em;
+                    opacity: .7;
+                }
+
+                #TorrentBrowserBrowsePage .tbTags {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: .3em;
+                }
+
+                #TorrentBrowserBrowsePage .tbLang {
+                    display: inline-flex;
+                    gap: .35em;
+                    align-items: center;
+                    padding: .15em .45em .15em .3em;
+                    font-size: .72em;
+                    font-weight: 600;
+                    letter-spacing: .03em;
+                    border: 1px solid var(--tb-line);
+                    border-radius: 4px;
+                }
+
+                /* Flags are drawn in CSS on purpose. Emoji flags do not render
+                   on Windows — the regional indicator pair falls back to the
+                   bare letters — and image files would need hosting. */
+                #TorrentBrowserBrowsePage .tbSwatch {
+                    width: 1.15em;
+                    height: .8em;
+                    border: 1px solid rgba(0, 0, 0, .35);
+                    border-radius: 2px;
+                    background: var(--tb-flag, linear-gradient(180deg, #888, #555));
+                }
+
+                #TorrentBrowserBrowsePage .tbLang[data-lang="hu"] { --tb-flag: linear-gradient(180deg, #cd2a3e 33.3%, #fff 33.3% 66.6%, #436f4d 66.6%); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="en"] { --tb-flag: linear-gradient(180deg, #00247d 40%, #fff 40% 60%, #cf142b 60%); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="de"] { --tb-flag: linear-gradient(180deg, #000 33.3%, #dd0000 33.3% 66.6%, #ffce00 66.6%); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="fr"] { --tb-flag: linear-gradient(90deg, #002395 33.3%, #fff 33.3% 66.6%, #ed2939 66.6%); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="it"] { --tb-flag: linear-gradient(90deg, #008c45 33.3%, #fff 33.3% 66.6%, #cd212a 66.6%); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="es"] { --tb-flag: linear-gradient(180deg, #aa151b 25%, #f1bf00 25% 75%, #aa151b 75%); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="ru"] { --tb-flag: linear-gradient(180deg, #fff 33.3%, #0039a6 33.3% 66.6%, #d52b1e 66.6%); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="pl"] { --tb-flag: linear-gradient(180deg, #fff 50%, #dc143c 50%); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="cs"] { --tb-flag: linear-gradient(180deg, #fff 50%, #d7141a 50%); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="ro"] { --tb-flag: linear-gradient(90deg, #002b7f 33.3%, #fcd116 33.3% 66.6%, #ce1126 66.6%); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="nl"] { --tb-flag: linear-gradient(180deg, #ae1c28 33.3%, #fff 33.3% 66.6%, #21468b 66.6%); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="pt"] { --tb-flag: linear-gradient(90deg, #046a38 40%, #da291c 40%); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="sv"] { --tb-flag: linear-gradient(90deg, #006aa7 30%, #fecc00 30% 45%, #006aa7 45%); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="tr"] { --tb-flag: linear-gradient(180deg, #e30a17, #e30a17); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="ja"] { --tb-flag: radial-gradient(circle at 50% 50%, #bc002d 30%, #fff 30%); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="ko"] { --tb-flag: radial-gradient(circle at 50% 50%, #cd2e3a 28%, #fff 28%); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="zh"] { --tb-flag: linear-gradient(180deg, #de2910, #de2910); }
+                #TorrentBrowserBrowsePage .tbLang[data-lang="multi"] { --tb-flag: linear-gradient(90deg, #e5533d, #e0a030, #43a047, #00a4dc); }
+
+                #TorrentBrowserBrowsePage .tbActions {
+                    display: flex;
+                    gap: .4em;
+                }
+
+                #TorrentBrowserBrowsePage .tbSend {
+                    flex: 1;
+                    padding: .55em;
+                    white-space: nowrap;
+                    font-size: .82em;
+                    font-family: inherit;
+                    font-weight: 600;
+                    color: inherit;
+                    background: var(--tb-panel-hi);
+                    border: 1px solid var(--tb-line);
+                    border-radius: 6px;
+                    cursor: pointer;
+                }
+
+                #TorrentBrowserBrowsePage .tbSend:hover:not(:disabled) {
+                    color: #fff;
+                    background: var(--tb-accent);
+                    border-color: var(--tb-accent);
+                }
+
+                #TorrentBrowserBrowsePage .tbSend:disabled { cursor: default; }
+                #TorrentBrowserBrowsePage .tbSend[data-state="sent"] { color: #fff; background: var(--tb-good); border-color: var(--tb-good); }
+                #TorrentBrowserBrowsePage .tbSend[data-state="failed"] { color: #fff; background: var(--tb-bad); border-color: var(--tb-bad); }
+
+                #TorrentBrowserBrowsePage .tbLink {
+                    display: flex;
+                    align-items: center;
+                    padding: 0 .55em;
+                    color: inherit;
+                    text-decoration: none;
+                    border: 1px solid var(--tb-line);
+                    border-radius: 6px;
+                    opacity: .7;
+                }
+
+                #TorrentBrowserBrowsePage .tbLink:hover { opacity: 1; border-color: var(--tb-accent); }
+                #TorrentBrowserBrowsePage .tbLink svg { width: 1.05em; height: 1.05em; }
+
+                #TorrentBrowserBrowsePage .tbPager {
+                    display: flex;
+                    gap: .75em;
+                    align-items: center;
+                    justify-content: center;
+                    margin: 1.5em 0 .5em;
+                }
+
+                #TorrentBrowserBrowsePage .tbPager button {
+                    padding: .5em 1.1em;
+                    font-family: inherit;
+                    color: inherit;
+                    background: var(--tb-panel-hi);
+                    border: 1px solid var(--tb-line);
+                    border-radius: 6px;
+                    cursor: pointer;
+                }
+
+                #TorrentBrowserBrowsePage .tbPager button:disabled { opacity: .4; cursor: default; }
+                #TorrentBrowserBrowsePage .tbPager span { font-size: .9em; opacity: .7; }
+
+                #TorrentBrowserBrowsePage .tbEmpty {
+                    padding: 3em 1em;
+                    text-align: center;
+                    opacity: .6;
+                }
+
+                #TorrentBrowserBrowsePage .tbEmpty svg {
+                    display: block;
+                    margin: 0 auto .5em;
+                }
+
+                #TorrentBrowserBrowsePage .tbSkeleton {
+                    border-radius: 10px;
+                    aspect-ratio: 2 / 3;
+                    background: var(--tb-panel);
+                    animation: tbPulse 1.3s ease-in-out infinite;
+                }
+
+                @keyframes tbPulse { 0%, 100% { opacity: .45; } 50% { opacity: .9; } }
+
+                /* Narrow: one card per row laid out sideways. A single-column
+                   grid of 2:3 posters puts one release on a phone screen. */
+                @media (max-width: 560px) {
+                    #TorrentBrowserBrowsePage .tbGrow,
+                    #TorrentBrowserBrowsePage .tbGo { flex: 1 1 100%; }
+                    #TorrentBrowserBrowsePage .tbField { flex: 1 1 40%; }
+                    #TorrentBrowserBrowsePage .tbGrid { grid-template-columns: 1fr; gap: .7em; }
+                    #TorrentBrowserBrowsePage .tbCard { flex-direction: row; }
+                    #TorrentBrowserBrowsePage .tbCard:hover { transform: none; }
+                    #TorrentBrowserBrowsePage .tbPoster {
+                        flex: 0 0 96px;
+                        width: 96px;
+                        align-self: flex-start;
+                    }
+                    #TorrentBrowserBrowsePage .tbBody { min-width: 0; }
+                    #TorrentBrowserBrowsePage .tbChip { font-size: .6em; top: .3em; }
+                    /* Two chips do not fit across a 96px poster, so the quality
+                       one drops to the bottom corner instead of colliding. */
+                    #TorrentBrowserBrowsePage .tbQuality { top: auto; bottom: .3em; left: .3em; }
+                    #TorrentBrowserBrowsePage .tbPeers { right: .3em; }
+                    #TorrentBrowserBrowsePage .tbActions { justify-content: flex-start; }
+                    #TorrentBrowserBrowsePage .tbSend { flex: 0 1 11em; }
+                }
+
+                @media (prefers-reduced-motion: reduce) {
+                    #TorrentBrowserBrowsePage .tbCard,
+                    #TorrentBrowserBrowsePage .tbPoster img { transition: none; }
+                    #TorrentBrowserBrowsePage .tbSkeleton { animation: none; }
+                }
+            </style>
+
+            <h2 style="margin-bottom:.8em;">Browse tracker</h2>
+
+            <div class="tbBar">
+                <div class="tbField tbGrow">
+                    <label for="Query">Search</label>
+                    <input type="search" id="Query" class="tbInput"
+                           placeholder="Title, or leave empty for the newest releases" />
+                </div>
+
+                <div class="tbField">
+                    <label for="Kind">Type</label>
+                    <select id="Kind" class="tbSelect">
+                        <option value="">Everything</option>
+                        <option value="movie">Movies</option>
+                        <option value="series">Series</option>
+                    </select>
+                </div>
+
+                <div class="tbField">
+                    <label for="Language">Language</label>
+                    <select id="Language" class="tbSelect">
+                        <option value="">Any</option>
+                    </select>
+                </div>
+
+                <div class="tbField">
+                    <label for="Quality">Quality</label>
+                    <select id="Quality" class="tbSelect">
+                        <option value="">Any</option>
+                    </select>
+                </div>
+
+                <div class="tbField">
+                    <label for="Sort">Sort by</label>
+                    <select id="Sort" class="tbSelect">
+                        <option value="seeders">Seeders</option>
+                        <option value="size">Size</option>
+                        <option value="date">Newest</option>
+                        <option value="title">Title</option>
+                    </select>
+                </div>
+
+                <button type="button" id="Go" class="tbGo">Search</button>
             </div>
 
-            <div class="selectContainer">
-                <select is="emby-select" id="Kind" label="Show">
-                    <option value="">Everything</option>
-                    <option value="movie">Movies</option>
-                    <option value="series">Series</option>
-                </select>
+            <p id="Status" class="tbStatus"></p>
+
+            <div id="Results" class="tbGrid"></div>
+
+            <div class="tbPager" id="Pager" style="display:none;">
+                <button type="button" id="Prev">Previous</button>
+                <span id="PageLabel"></span>
+                <button type="button" id="Next">Next</button>
             </div>
-
-            <button is="emby-button" type="button" id="Go" class="raised button-submit block">
-                <span>Search</span>
-            </button>
-
-            <p id="Status" class="fieldDescription"></p>
-
-            <table class="tblResults" style="width:100%; border-collapse:collapse; margin-top:1.5em;">
-                <thead>
-                    <tr style="text-align:left;">
-                        <th style="padding:.5em;">Release</th>
-                        <th style="padding:.5em; white-space:nowrap;">Size</th>
-                        <th style="padding:.5em; white-space:nowrap;">S / L</th>
-                        <th style="padding:.5em;"></th>
-                    </tr>
-                </thead>
-                <tbody id="Results"></tbody>
-            </table>
         </div>
     </div>
 
@@ -51,135 +456,665 @@
             var page = document.querySelector('#TorrentBrowserBrowsePage');
             var results = page.querySelector('#Results');
             var status = page.querySelector('#Status');
+            var pager = page.querySelector('#Pager');
+            var pageLabel = page.querySelector('#PageLabel');
+
+            // The server asks the indexer for 50 per page, so a short page is
+            // the last one.
+            var PAGE_SIZE = 50;
+
+            var state = { page: 1, items: [], loading: false };
+
+            // ---- release name parsing ---------------------------------------
+            //
+            // Torznab gives a release name and little else, so language and
+            // quality are read out of the name. Tokens are matched between
+            // separators: a bare "it" inside a word is not Italian.
+
+            var LANGUAGES = [
+                { code: 'hu', label: 'HUN', tokens: ['hun', 'hungarian', 'magyar', 'szinkron'] },
+                { code: 'en', label: 'ENG', tokens: ['eng', 'english'] },
+                { code: 'de', label: 'GER', tokens: ['ger', 'german', 'deu'] },
+                { code: 'fr', label: 'FRA', tokens: ['fre', 'french', 'fra', 'vff', 'truefrench'] },
+                { code: 'it', label: 'ITA', tokens: ['ita', 'italian'] },
+                { code: 'es', label: 'SPA', tokens: ['spa', 'spanish', 'esp', 'castellano'] },
+                { code: 'ru', label: 'RUS', tokens: ['rus', 'russian'] },
+                { code: 'pl', label: 'POL', tokens: ['pol', 'polish'] },
+                { code: 'cs', label: 'CZE', tokens: ['cze', 'czech', 'ces'] },
+                { code: 'ro', label: 'RON', tokens: ['rom', 'romanian', 'ron'] },
+                { code: 'nl', label: 'NLD', tokens: ['dut', 'dutch', 'nld'] },
+                { code: 'pt', label: 'POR', tokens: ['por', 'portuguese', 'brazilian'] },
+                { code: 'sv', label: 'SWE', tokens: ['swe', 'swedish'] },
+                { code: 'tr', label: 'TUR', tokens: ['tur', 'turkish'] },
+                { code: 'ja', label: 'JPN', tokens: ['jpn', 'japanese', 'jap'] },
+                { code: 'ko', label: 'KOR', tokens: ['kor', 'korean'] },
+                { code: 'zh', label: 'CHI', tokens: ['chi', 'chinese', 'mandarin'] },
+                { code: 'multi', label: 'MULTI', tokens: ['multi', 'multilang', 'multisub', 'dual', 'dualaudio'] }
+            ];
+
+            function tokensOf(title) {
+                // Release names separate with dots, spaces, brackets and dashes.
+                return String(title || '').toLowerCase().split(/[^a-z0-9]+/);
+            }
+
+            function detectLanguages(title) {
+                var tokens = tokensOf(title);
+                var found = [];
+
+                LANGUAGES.forEach(function (lang) {
+                    var hit = lang.tokens.some(function (token) {
+                        return tokens.indexOf(token) !== -1;
+                    });
+
+                    if (hit) { found.push(lang); }
+                });
+
+                return found;
+            }
+
+            function detectQuality(title) {
+                var name = String(title || '').toLowerCase();
+
+                if (/\b(2160p|4k|uhd)\b/.test(name)) { return '2160p'; }
+                if (/\b1080[pi]\b/.test(name)) { return '1080p'; }
+                if (/\b720p\b/.test(name)) { return '720p'; }
+                if (/\b(480p|576p|dvdrip|xvid)\b/.test(name)) { return 'SD'; }
+
+                return '';
+            }
+
+            function detectSource(title) {
+                var name = String(title || '').toLowerCase();
+
+                if (/\bremux\b/.test(name)) { return 'REMUX'; }
+                if (/\b(bluray|blu-ray|bdrip|brrip)\b/.test(name)) { return 'BluRay'; }
+                if (/\b(web-?dl|webrip|web)\b/.test(name)) { return 'WEB'; }
+                if (/\bhdtv\b/.test(name)) { return 'HDTV'; }
+                if (/\b(dvdrip|dvd)\b/.test(name)) { return 'DVD'; }
+
+                return '';
+            }
+
+            function looksLikeSeries(title) {
+                return /\b(s\d{1,2}e\d{1,2}|s\d{1,2}\b|\d{1,2}x\d{2}\b|season[\s._]?\d+)/i.test(String(title || ''));
+            }
+
+            // Everything before the year, or before the first quality marker,
+            // is close enough to a title for a metadata lookup.
+            function guessTitle(release) {
+                var name = String(release || '').replace(/[\s._\-(](19|20)\d{2}[\s._\-)]/, ' |YEAR| ');
+                var cut = name.split('|YEAR|')[0];
+
+                if (cut === name) {
+                    cut = name.split(/\b(2160p|1080[pi]|720p|480p|bluray|web-?dl|webrip|hdtv|dvdrip|x264|x265|h264|h265|hevc)\b/i)[0];
+                }
+
+                return stripTrailingLanguages(cut.replace(/[._]+/g, ' ').replace(/\s+/g, ' ').trim());
+            }
+
+            // "Fargo Season 4 HUN" reads better as "Fargo Season 4": the flags
+            // below the title already say which languages the release carries.
+            var LANGUAGE_TOKENS = {};
+
+            LANGUAGES.forEach(function (lang) {
+                lang.tokens.forEach(function (token) { LANGUAGE_TOKENS[token] = true; });
+            });
+
+            function stripTrailingLanguages(text) {
+                var words = text.split(' ').filter(Boolean);
+
+                while (words.length > 1 && LANGUAGE_TOKENS[words[words.length - 1].toLowerCase()]) {
+                    words.pop();
+                }
+
+                return words.join(' ');
+            }
+
+            // A metadata provider wants the show, not the episode: "Breaking Bad",
+            // not "Breaking Bad S03E07".
+            function lookupName(title) {
+                return String(title || '')
+                    .replace(/\s(s\d{1,2}(e\d{1,2})?|\d{1,2}x\d{2}|season\s*\d+)\b.*$/i, '')
+                    .trim();
+            }
+
+            function guessYear(release) {
+                var match = String(release || '').match(/\b(19|20)\d{2}\b/);
+                return match ? parseInt(match[0], 10) : null;
+            }
+
+            // ---- formatting --------------------------------------------------
 
             function humanSize(bytes) {
                 if (!bytes) { return '—'; }
+
                 var units = ['B', 'KB', 'MB', 'GB', 'TB'];
                 var i = 0;
-                while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
-                return bytes.toFixed(i < 2 ? 0 : 2) + ' ' + units[i];
+                var value = bytes;
+
+                while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; }
+
+                // Significant digits rather than fixed places: 13.9 GB and
+                // 700 MB, not 13.96 GB and 700.00 MB.
+                var decimals = value < 10 ? 2 : (value < 100 ? 1 : 0);
+
+                return value.toFixed(decimals) + ' ' + units[i];
             }
 
-            function showError(response, fallback) {
-                if (response && typeof response.json === 'function') {
-                    response.json().then(function (body) {
-                        status.textContent = body.detail || body.Message || fallback;
-                    }).catch(function () {
-                        status.textContent = fallback;
-                    });
-                } else {
-                    status.textContent = fallback;
+            function humanAge(iso) {
+                if (!iso) { return ''; }
+
+                var then = new Date(iso).getTime();
+                if (isNaN(then)) { return ''; }
+
+                var days = Math.floor((Date.now() - then) / 86400000);
+
+                if (days < 0) { return 'just now'; }
+                if (days === 0) { return 'today'; }
+                if (days === 1) { return 'yesterday'; }
+                if (days < 30) { return days + ' days ago'; }
+                if (days < 365) { return Math.round(days / 30) + ' months ago'; }
+
+                return Math.round(days / 365) + ' years ago';
+            }
+
+            function element(tag, className, text) {
+                var el = document.createElement(tag);
+                if (className) { el.className = className; }
+                if (text !== undefined && text !== null) { el.textContent = text; }
+                return el;
+            }
+
+            // Inline SVG rather than the material-icons ligature font: if the
+            // font is missing or blocked, a ligature renders as the literal
+            // word "open_in_new" in the middle of the card.
+            var ICONS = {
+                film: 'M4 5.5h16v13H4zM8 5.5v13M16 5.5v13M4 12h4M16 12h4',
+                tv: 'M3.5 5.5h17v11h-17zM8.5 20h7',
+                search: 'M11 4.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM15.8 15.8L20.5 20.5',
+                funnel: 'M3.5 5.5h17l-6.5 7.5v5.5l-4-2.2v-3.3z',
+                external: 'M14 4.5h5.5V10M19.5 4.5L11 13M18 14v5.5H4.5V6H10'
+            };
+
+            function icon(name, size) {
+                var ns = 'http://www.w3.org/2000/svg';
+                var svg = document.createElementNS(ns, 'svg');
+
+                svg.setAttribute('viewBox', '0 0 24 24');
+                svg.setAttribute('width', size || '1em');
+                svg.setAttribute('height', size || '1em');
+                svg.setAttribute('fill', 'none');
+                svg.setAttribute('stroke', 'currentColor');
+                svg.setAttribute('stroke-width', '1.5');
+                svg.setAttribute('stroke-linecap', 'round');
+                svg.setAttribute('stroke-linejoin', 'round');
+                svg.setAttribute('aria-hidden', 'true');
+
+                var path = document.createElementNS(ns, 'path');
+                path.setAttribute('d', ICONS[name] || ICONS.film);
+                svg.appendChild(path);
+
+                return svg;
+            }
+
+            // ---- poster art --------------------------------------------------
+            //
+            // Jellyfin's own remote search answers with an ImageUrl from whatever
+            // metadata providers the server already has configured, so no extra
+            // API key is needed here. It is admin-only, it costs a provider call,
+            // and it can be turned off entirely, so: lazy, queued, cached, and
+            // silent when it fails.
+
+            var posterCache = {};
+            var posterQueue = [];
+            var posterActive = 0;
+            var postersAvailable = true;
+            var POSTER_CONCURRENCY = 3;
+
+            function cacheRead(key) {
+                if (Object.prototype.hasOwnProperty.call(posterCache, key)) { return posterCache[key]; }
+
+                try {
+                    var stored = window.sessionStorage.getItem('tbPoster:' + key);
+                    if (stored !== null) {
+                        posterCache[key] = stored;
+                        return stored;
+                    }
+                } catch (e) { /* private mode, or storage disabled */ }
+
+                return undefined;
+            }
+
+            function cacheWrite(key, url) {
+                posterCache[key] = url;
+
+                try {
+                    window.sessionStorage.setItem('tbPoster:' + key, url);
+                } catch (e) { /* nothing we can do, the memory cache still holds */ }
+            }
+
+            function pumpPosterQueue() {
+                while (posterActive < POSTER_CONCURRENCY && posterQueue.length) {
+                    fetchPoster(posterQueue.shift());
                 }
-                status.style.color = '#cc3333';
             }
 
-            function send(releaseId, button) {
-                var original = button.querySelector('span').textContent;
-                button.disabled = true;
-                button.querySelector('span').textContent = 'Sending…';
+            function fetchPoster(job) {
+                if (!postersAvailable) { return; }
+
+                posterActive++;
+
+                var body = {
+                    SearchInfo: { Name: job.name, ProviderIds: {} },
+                    IncludeDisabledProviders: true
+                };
+
+                if (job.imdb) { body.SearchInfo.ProviderIds.Imdb = job.imdb; }
+                if (job.year) { body.SearchInfo.Year = job.year; }
 
                 ApiClient.ajax({
                     type: 'POST',
-                    url: ApiClient.getUrl('TorrentBrowser/Releases/' + releaseId + '/Download')
-                }).then(function () {
-                    button.querySelector('span').textContent = 'Sent';
-                }).catch(function (response) {
-                    button.disabled = false;
-                    button.querySelector('span').textContent = original;
+                    url: ApiClient.getUrl(job.series ? 'Items/RemoteSearch/Series' : 'Items/RemoteSearch/Movie'),
+                    data: JSON.stringify(body),
+                    contentType: 'application/json',
+                    dataType: 'json'
+                }).then(function (matches) {
+                    var url = '';
 
-                    var message = 'The torrent client did not accept it.';
-                    if (response && response.json) {
-                        response.json().then(function (body) {
-                            Dashboard.alert(body.detail || body.Message || message);
-                        }).catch(function () {
-                            Dashboard.alert(message);
-                        });
-                    } else {
-                        Dashboard.alert(message);
+                    for (var i = 0; i < (matches || []).length; i++) {
+                        if (matches[i] && matches[i].ImageUrl) { url = matches[i].ImageUrl; break; }
                     }
+
+                    cacheWrite(job.key, url);
+                    if (url) { applyPoster(job.target, url); }
+                }).catch(function (response) {
+                    // 403 means this user cannot use remote search at all, so
+                    // stop asking rather than firing one failure per card.
+                    if (response && response.status === 403) { postersAvailable = false; }
+                    cacheWrite(job.key, '');
+                }).finally(function () {
+                    posterActive--;
+                    pumpPosterQueue();
                 });
             }
 
-            function render(items) {
-                results.innerHTML = '';
+            function applyPoster(holder, url) {
+                if (!holder.isConnected) { return; }
 
-                if (!items.length) {
-                    status.textContent = 'Nothing matched that search. Try fewer words.';
+                var image = new Image();
+
+                image.onload = function () {
+                    if (!holder.isConnected) { return; }
+                    var art = holder.querySelector('img');
+                    art.src = url;
+                    art.classList.add('tbLoaded');
+                    var placeholder = holder.querySelector('.tbNoArt');
+                    if (placeholder) { placeholder.style.display = 'none'; }
+                };
+
+                image.src = url;
+            }
+
+            var posterObserver = window.IntersectionObserver
+                ? new IntersectionObserver(function (entries, observer) {
+                    entries.forEach(function (entry) {
+                        if (!entry.isIntersecting) { return; }
+                        observer.unobserve(entry.target);
+                        requestPoster(entry.target);
+                    });
+                }, { rootMargin: '200px' })
+                : null;
+
+            function requestPoster(holder) {
+                if (!postersAvailable) { return; }
+
+                var job = {
+                    target: holder,
+                    key: holder.dataset.key,
+                    name: holder.dataset.name,
+                    imdb: holder.dataset.imdb,
+                    year: holder.dataset.year ? parseInt(holder.dataset.year, 10) : null,
+                    series: holder.dataset.series === '1'
+                };
+
+                if (!job.name && !job.imdb) { return; }
+
+                var cached = cacheRead(job.key);
+
+                if (cached !== undefined) {
+                    if (cached) { applyPoster(holder, cached); }
                     return;
                 }
 
-                status.textContent = items.length + ' releases.';
+                posterQueue.push(job);
+                pumpPosterQueue();
+            }
 
-                items.forEach(function (item) {
-                    var row = document.createElement('tr');
-                    row.style.borderTop = '1px solid rgba(255,255,255,.1)';
+            // ---- rendering ---------------------------------------------------
 
-                    var title = document.createElement('td');
-                    title.style.padding = '.5em';
-                    if (item.DetailsUrl) {
-                        var link = document.createElement('a');
-                        link.href = item.DetailsUrl;
-                        link.target = '_blank';
-                        link.rel = 'noopener noreferrer';
-                        link.textContent = item.Title;
-                        title.appendChild(link);
-                    } else {
-                        title.textContent = item.Title;
+            function buildCard(item) {
+                var languages = detectLanguages(item.Title);
+                var quality = detectQuality(item.Title);
+                var source = detectSource(item.Title);
+                var series = looksLikeSeries(item.Title);
+                var name = guessTitle(item.Title);
+                var year = guessYear(item.Title);
+
+                var card = element('article', 'tbCard');
+
+                var poster = item.DetailsUrl ? element('a', 'tbPoster') : element('div', 'tbPoster');
+
+                if (item.DetailsUrl) {
+                    poster.href = item.DetailsUrl;
+                    poster.target = '_blank';
+                    poster.rel = 'noopener noreferrer';
+                    poster.title = 'Open on the tracker';
+                }
+
+                poster.dataset.key = item.ImdbId || (name + '|' + (year || '') + '|' + (series ? 's' : 'm'));
+                poster.dataset.name = series ? lookupName(name) : name;
+                poster.dataset.imdb = item.ImdbId || '';
+                poster.dataset.year = year || '';
+                poster.dataset.series = series ? '1' : '0';
+
+                var art = element('img');
+                art.alt = '';
+                art.loading = 'lazy';
+                poster.appendChild(art);
+
+                var placeholder = element('span', 'tbNoArt');
+                placeholder.appendChild(icon(series ? 'tv' : 'film'));
+                poster.appendChild(placeholder);
+
+                if (quality) { poster.appendChild(element('span', 'tbChip tbQuality', quality)); }
+
+                var seeders = item.Seeders || 0;
+                var health = seeders === 0 ? ' tbDead' : (seeders >= 5 ? ' tbHealthy' : '');
+                poster.appendChild(element('span', 'tbChip tbPeers' + health,
+                    '▲ ' + seeders + ' ▼ ' + Math.max(item.Leechers || 0, 0)));
+
+                card.appendChild(poster);
+
+                var body = element('div', 'tbBody');
+
+                // Lead with something readable. The release name is the proof,
+                // not the label — it goes underneath, quietly.
+                var title = element('h3', 'tbTitle', name || item.Title);
+
+                if (name && year) {
+                    title.appendChild(document.createTextNode(' '));
+                    title.appendChild(element('span', 'tbYear', year));
+                }
+
+                title.title = item.Title;
+                body.appendChild(title);
+
+                if (name) {
+                    var release = element('p', 'tbRelease', item.Title);
+                    release.title = item.Title;
+                    body.appendChild(release);
+                }
+
+                if (languages.length || source) {
+                    var tags = element('div', 'tbTags');
+
+                    languages.forEach(function (lang) {
+                        var chip = element('span', 'tbLang');
+                        chip.dataset.lang = lang.code;
+                        chip.appendChild(element('i', 'tbSwatch'));
+                        chip.appendChild(document.createTextNode(lang.label));
+                        tags.appendChild(chip);
+                    });
+
+                    if (source) {
+                        var sourceChip = element('span', 'tbLang', source);
+                        sourceChip.style.paddingLeft = '.45em';
+                        tags.appendChild(sourceChip);
                     }
 
-                    var size = document.createElement('td');
-                    size.style.padding = '.5em';
-                    size.style.whiteSpace = 'nowrap';
-                    size.textContent = humanSize(item.SizeBytes);
+                    body.appendChild(tags);
+                }
 
-                    var peers = document.createElement('td');
-                    peers.style.padding = '.5em';
-                    peers.style.whiteSpace = 'nowrap';
-                    peers.textContent = item.Seeders + ' / ' + Math.max(item.Leechers, 0);
+                var meta = element('div', 'tbMeta');
+                meta.appendChild(element('span', '', humanSize(item.SizeBytes)));
 
-                    var action = document.createElement('td');
-                    action.style.padding = '.5em';
-                    action.style.textAlign = 'right';
+                var age = humanAge(item.PublishDate);
+                if (age) { meta.appendChild(element('span', '', age)); }
 
-                    var button = document.createElement('button');
-                    button.setAttribute('is', 'emby-button');
-                    button.className = 'raised button-submit';
-                    button.type = 'button';
-                    var label = document.createElement('span');
-                    label.textContent = 'Download';
-                    button.appendChild(label);
-                    button.addEventListener('click', function () { send(item.Id, button); });
-                    action.appendChild(button);
+                body.appendChild(meta);
 
-                    row.append(title, size, peers, action);
-                    results.appendChild(row);
+                var actions = element('div', 'tbActions');
+
+                var send = element('button', 'tbSend', 'Send');
+                send.type = 'button';
+                send.addEventListener('click', function () { sendRelease(item, send); });
+                actions.appendChild(send);
+
+                if (item.DetailsUrl) {
+                    var link = element('a', 'tbLink');
+                    link.href = item.DetailsUrl;
+                    link.target = '_blank';
+                    link.rel = 'noopener noreferrer';
+                    link.title = 'Open on the tracker';
+                    link.setAttribute('aria-label', 'Open on the tracker');
+                    link.appendChild(icon('external'));
+                    actions.appendChild(link);
+                }
+
+                body.appendChild(actions);
+                card.appendChild(body);
+
+                if (posterObserver) { posterObserver.observe(poster); }
+                else { requestPoster(poster); }
+
+                return card;
+            }
+
+            function visibleItems() {
+                var language = page.querySelector('#Language').value;
+                var quality = page.querySelector('#Quality').value;
+                var sort = page.querySelector('#Sort').value;
+
+                var filtered = state.items.filter(function (item) {
+                    if (language) {
+                        var codes = detectLanguages(item.Title).map(function (l) { return l.code; });
+                        if (codes.indexOf(language) === -1) { return false; }
+                    }
+
+                    if (quality && detectQuality(item.Title) !== quality) { return false; }
+
+                    return true;
+                });
+
+                return filtered.sort(function (a, b) {
+                    if (sort === 'size') { return (b.SizeBytes || 0) - (a.SizeBytes || 0); }
+                    if (sort === 'title') { return String(a.Title).localeCompare(String(b.Title)); }
+                    if (sort === 'date') {
+                        return new Date(b.PublishDate || 0).getTime() - new Date(a.PublishDate || 0).getTime();
+                    }
+                    return (b.Seeders || 0) - (a.Seeders || 0);
                 });
             }
 
-            function search() {
-                status.textContent = 'Searching…';
-                status.style.color = '';
+            function refreshFilterOptions() {
+                var languages = {};
+                var qualities = {};
+
+                state.items.forEach(function (item) {
+                    detectLanguages(item.Title).forEach(function (lang) {
+                        languages[lang.code] = (languages[lang.code] || 0) + 1;
+                    });
+
+                    var quality = detectQuality(item.Title);
+                    if (quality) { qualities[quality] = (qualities[quality] || 0) + 1; }
+                });
+
+                fillSelect(page.querySelector('#Language'), 'Any language', Object.keys(languages)
+                    .sort(function (a, b) { return languages[b] - languages[a]; })
+                    .map(function (code) {
+                        var known = LANGUAGES.filter(function (l) { return l.code === code; })[0];
+                        return { value: code, text: (known ? known.label : code) + ' (' + languages[code] + ')' };
+                    }));
+
+                fillSelect(page.querySelector('#Quality'), 'Any quality', ['2160p', '1080p', '720p', 'SD']
+                    .filter(function (q) { return qualities[q]; })
+                    .map(function (q) { return { value: q, text: q + ' (' + qualities[q] + ')' }; }));
+            }
+
+            function fillSelect(select, anyLabel, options) {
+                var previous = select.value;
+
+                select.innerHTML = '';
+                select.appendChild(new Option(anyLabel, ''));
+
+                options.forEach(function (option) {
+                    select.appendChild(new Option(option.text, option.value));
+                });
+
+                // Keep the chosen filter across searches when it still applies.
+                select.value = previous;
+                if (select.selectedIndex === -1) { select.value = ''; }
+            }
+
+            function render() {
                 results.innerHTML = '';
+
+                var items = visibleItems();
+
+                if (!items.length) {
+                    var empty = element('div', 'tbEmpty');
+                    empty.style.gridColumn = '1 / -1';
+                    empty.appendChild(icon(state.items.length ? 'funnel' : 'search', '3em'));
+                    empty.appendChild(element('p', '', state.items.length
+                        ? 'No release on this page matches those filters.'
+                        : 'Nothing matched that search. Try fewer words.'));
+                    results.appendChild(empty);
+                    return;
+                }
+
+                var fragment = document.createDocumentFragment();
+                items.forEach(function (item) { fragment.appendChild(buildCard(item)); });
+                results.appendChild(fragment);
+            }
+
+            function setStatus(text, isError) {
+                status.textContent = text;
+                status.className = isError ? 'tbStatus tbError' : 'tbStatus';
+            }
+
+            function describe(response, fallback, then) {
+                if (response && typeof response.json === 'function') {
+                    response.json().then(function (body) {
+                        then(body.detail || body.Message || body.title || fallback);
+                    }).catch(function () { then(fallback); });
+                } else {
+                    then(fallback);
+                }
+            }
+
+            function sendRelease(item, button) {
+                button.disabled = true;
+                button.dataset.state = 'sending';
+                button.textContent = 'Sending…';
+
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('TorrentBrowser/Releases/' + item.Id + '/Download')
+                }).then(function () {
+                    button.dataset.state = 'sent';
+                    button.textContent = 'Sent ✓';
+                }).catch(function (response) {
+                    describe(response, 'The torrent client did not accept it.', function (message) {
+                        button.disabled = false;
+                        button.dataset.state = 'failed';
+                        button.textContent = 'Failed — retry';
+                        button.title = message;
+                        setStatus(message, true);
+                    });
+                });
+            }
+
+            function showSkeletons() {
+                results.innerHTML = '';
+
+                for (var i = 0; i < 12; i++) {
+                    results.appendChild(element('div', 'tbSkeleton'));
+                }
+            }
+
+            function search(pageNumber) {
+                if (state.loading) { return; }
+
+                state.loading = true;
+                state.page = Math.max(pageNumber || 1, 1);
+
+                page.querySelector('#Go').disabled = true;
+                setStatus('Searching…');
+                showSkeletons();
+                pager.style.display = 'none';
 
                 var url = ApiClient.getUrl('TorrentBrowser/Search', {
                     query: page.querySelector('#Query').value,
                     kind: page.querySelector('#Kind').value,
-                    page: 1
+                    page: state.page
                 });
 
                 ApiClient.getJSON(url).then(function (data) {
-                    render(data.Items || []);
+                    state.items = data.Items || [];
+                    refreshFilterOptions();
+                    render();
+
+                    var shown = visibleItems().length;
+                    setStatus(shown === state.items.length
+                        ? state.items.length + ' releases'
+                        : shown + ' of ' + state.items.length + ' releases shown');
+
+                    pager.style.display = (state.page > 1 || state.items.length >= PAGE_SIZE) ? 'flex' : 'none';
+                    pageLabel.textContent = 'Page ' + state.page;
+                    page.querySelector('#Prev').disabled = state.page <= 1;
+                    page.querySelector('#Next').disabled = state.items.length < PAGE_SIZE;
                 }).catch(function (response) {
-                    // The controller returns the real reason in the problem
-                    // body. Swallowing it and showing a generic line means
-                    // every failure looks identical and sends you to the log.
-                    showError(response, 'The tracker could not be reached. Check the plugin settings.');
+                    // The controller puts the real reason in the problem body.
+                    // Swallowing it makes every failure look the same and sends
+                    // you to the server log for no reason.
+                    results.innerHTML = '';
+                    state.items = [];
+                    describe(response, 'The tracker could not be reached. Check the plugin settings.',
+                        function (message) { setStatus(message, true); });
+                }).finally(function () {
+                    state.loading = false;
+                    page.querySelector('#Go').disabled = false;
                 });
             }
 
-            page.querySelector('#Go').addEventListener('click', search);
+            function rerender() {
+                if (!state.items.length) { return; }
+
+                render();
+
+                var shown = visibleItems().length;
+                setStatus(shown === state.items.length
+                    ? state.items.length + ' releases'
+                    : shown + ' of ' + state.items.length + ' releases shown');
+            }
+
+            page.querySelector('#Go').addEventListener('click', function () { search(1); });
+
             page.querySelector('#Query').addEventListener('keydown', function (e) {
-                if (e.key === 'Enter') { search(); }
+                if (e.key === 'Enter') { search(1); }
+            });
+
+            page.querySelector('#Kind').addEventListener('change', function () { search(1); });
+            page.querySelector('#Language').addEventListener('change', rerender);
+            page.querySelector('#Quality').addEventListener('change', rerender);
+            page.querySelector('#Sort').addEventListener('change', rerender);
+
+            page.querySelector('#Prev').addEventListener('click', function () { search(state.page - 1); });
+            page.querySelector('#Next').addEventListener('click', function () { search(state.page + 1); });
+
+            // Land on the newest releases instead of an empty page.
+            page.addEventListener('pageshow', function () {
+                if (!state.items.length) { search(1); }
             });
         })();
     </script>

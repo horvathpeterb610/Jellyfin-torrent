@@ -88,10 +88,12 @@ The injected button clones an existing header button rather than building one. C
 
 The test buttons read saved settings. They call the server, which reads the configuration file, not the form. Save before testing or you are testing the previous values.
 
+The browse page reads language, quality and source out of the release name, because Torznab gives you a name and little else. Two-letter codes are deliberately not matched: "de" and "en" are ordinary words in French, Spanish and Dutch release names, and tagging Amelie as German once is enough. Flags are drawn with CSS gradients rather than emoji — Windows has no flag glyphs, so a regional indicator pair renders as the bare letters — and icons are inline SVG rather than the material-icons ligature font, which renders as the literal word "open_in_new" if the font ever fails to load.
+
+Poster art comes from Jellyfin's own Items/RemoteSearch endpoint, so it uses whatever metadata providers the server already has configured and needs no API key of its own. It is admin-only and costs a provider call per release, so the page asks only for cards scrolled into view, three at a time, and caches per session. If it 403s the page stops asking and just shows placeholders.
+
 What's left to write
 Transmission and Deluge clients — IDownloadClient is two methods; the resolver has notes on each protocol's quirk.
-Pagination in the browse page (the API already takes page).
-Poster art. Torznab gives you an IMDb id, so you can hand it to Jellyfin's own metadata providers rather than scraping images.
 A scheduled task that re-runs saved searches, if you want "new releases" rather than search-on-demand. Implement IScheduledTask.
 One non-technical note
 
