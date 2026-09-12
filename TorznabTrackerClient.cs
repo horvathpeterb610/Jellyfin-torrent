@@ -98,11 +98,7 @@ public sealed class TorznabTrackerClient : ITrackerClient
 
         foreach (var item in doc.Descendants("item"))
         {
-            var attributes = item.Elements(Torznab + "attr")
-                .ToDictionary(
-                    a => a.Attribute("name")?.Value ?? string.Empty,
-                    a => a.Attribute("value")?.Value ?? string.Empty,
-                    StringComparer.OrdinalIgnoreCase);
+            var attributes = ReadAttributes(item);
 
             var enclosureUrl = item.Element("enclosure")?.Attribute("url")?.Value;
             var link = item.Element("link")?.Value;
@@ -121,7 +117,7 @@ public sealed class TorznabTrackerClient : ITrackerClient
                 Leechers = ParseInt(GetValue(attributes, "peers")) - ParseInt(GetValue(attributes, "seeders")),
                 PublishDate = ParseDate(item.Element("pubDate")?.Value),
                 ImdbId = NormaliseImdb(GetValue(attributes, "imdbid") ?? GetValue(attributes, "imdb")),
-                Kind = query.Kind
+                Kind = query.Kind == ReleaseKind.Unknown ? KindFromCategories(item) : query.Kind
             });
         }
 
@@ -196,6 +192,75 @@ public sealed class TorznabTrackerClient : ITrackerClient
                 .Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value!)}"));
 
         return $"{baseUrl}?{query}";
+    }
+
+    /// <summary>
+    /// Flattens the &lt;torznab:attr&gt; elements of one item into a lookup.
+    /// </summary>
+    /// <remarks>
+    /// Torznab repeats the element for multi-valued fields — a release carries
+    /// one "category" attr per category it belongs to, so nCore movies arrive
+    /// with 2000 and 2040 — which made a plain ToDictionary throw "An item with
+    /// the same key has already been added. Key: category" and failed the whole
+    /// search with a 502. The first non-empty value wins: Prowlarr lists the
+    /// broad category before the specific one, and repeats of any other
+    /// attribute are alternates rather than corrections.
+    /// </remarks>
+    private static Dictionary<string, string> ReadAttributes(XElement item)
+    {
+        var attributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var attr in item.Elements(Torznab + "attr"))
+        {
+            var name = attr.Attribute("name")?.Value;
+            var value = attr.Attribute("value")?.Value;
+
+            if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(value))
+            {
+                continue;
+            }
+
+            attributes.TryAdd(name, value);
+        }
+
+        return attributes;
+    }
+
+    /// <summary>
+    /// Reads the Newznab category numbers off an item so a mixed search can
+    /// still tell a film from a series — that decides which qBittorrent
+    /// category the release is sent to.
+    /// </summary>
+    private static ReleaseKind KindFromCategories(XElement item)
+    {
+        foreach (var attr in item.Elements(Torznab + "attr"))
+        {
+            if (!string.Equals(attr.Attribute("name")?.Value, "category", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!int.TryParse(
+                    attr.Attribute("value")?.Value,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out var category))
+            {
+                continue;
+            }
+
+            if (category is >= 5000 and < 6000)
+            {
+                return ReleaseKind.Series;
+            }
+
+            if (category is >= 2000 and < 3000)
+            {
+                return ReleaseKind.Movie;
+            }
+        }
+
+        return ReleaseKind.Unknown;
     }
 
     private static string? GetValue(Dictionary<string, string> attributes, string key) =>
